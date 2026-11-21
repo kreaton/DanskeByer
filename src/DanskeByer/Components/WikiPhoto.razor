@@ -1,0 +1,41 @@
+@inject WikiImageService Images
+
+<figure class="photo">
+    @if (_loading)
+    {
+        <div class="photo-skeleton" aria-hidden="true"></div>
+    }
+    else if (_image is not null)
+    {
+        <img src="@_image.Url" alt="@Alt" loading="lazy"
+             onerror="this.onerror=null;this.src='@_image.FallbackUrl'" />
+        <figcaption>
+            Foto: <a href="@_image.PageUrl" target="_blank" rel="noopener noreferrer">Wikipedia / Wikimedia Commons</a>
+            (fri licens – klik for fotograf og licens)
+        </figcaption>
+    }
+</figure>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Fallback { get; set; }
+    [Parameter] public string Alt { get; set; } = "";
+
+    private string? _key;
+    private WikiImage? _image;
+    private bool _loading;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = Title + "|" + Fallback;
+        if (key == _key) return;
+        _key = key;
+        _image = null;
+        _loading = true;
+
+        var image = await Images.GetAsync(Title, Fallback);
+        if (key != _key) return;   // another town was selected while we waited
+        _image = image;
+        _loading = false;
+    }
+}

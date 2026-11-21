@@ -1,0 +1,424 @@
+@inject GameData Data
+@inject SoundService Sound
+
+<div class="byer-page">
+    <header class="title">
+        <h1>
+            <span class="flag" aria-hidden="true"><img src="img/dannebrog.gif" alt="" /></span>
+            Danske Byer
+        </h1>
+        <div class="title-actions">
+            <button type="button" class="sound-btn" @onclick="ToggleSound" aria-pressed="@Sound.Enabled"
+                    aria-label="@(Sound.Enabled ? "Slå lyden fra" : "Slå lyden til")" title="@(Sound.Enabled ? "Slå lyden fra" : "Slå lyden til") (computerskabt stemme)">
+                @(Sound.Enabled ? "🔊" : "🔇")
+            </button>
+            <a class="kg-home" href="../" aria-label="Alle spil" title="Alle spil"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 9.5V20h4.5v-6h4v6h4.5V9.5" /></svg><span class="kg-text">Alle spil</span></a>
+        </div>
+    </header>
+
+    <div class="toolbar">
+        <div class="segmented" role="group" aria-label="Spiltype">
+            <button type="button" class="@Active(_mode == Mode.Explore)" aria-pressed="@(_mode == Mode.Explore)" @onclick="() => SetMode(Mode.Explore)">🔎 Udforsk</button>
+            <button type="button" class="@Active(_mode == Mode.Quiz)" aria-pressed="@(_mode == Mode.Quiz)" @onclick="() => SetMode(Mode.Quiz)">🎯 Quiz</button>
+        </div>
+
+        @if (_mode == Mode.Quiz)
+        {
+            @* Easy: the name is shown and said, find it on the map. Hard: only a description. *@
+            <div class="segmented levels" role="group" aria-label="Quizniveau">
+                <button type="button" class="@Active(!_quizHard)" aria-pressed="@(!_quizHard)" @onclick="() => SetQuizHard(false)">
+                    🔊 Let<small>hør navnet</small>
+                </button>
+                <button type="button" class="@Active(_quizHard)" aria-pressed="@_quizHard" @onclick="() => SetQuizHard(true)">
+                    🕵️ Svær<small>gæt ud fra tekst</small>
+                </button>
+            </div>
+        }
+
+        @if (!SightQuiz)
+        {
+            <div class="segmented levels" role="group" aria-label="Antal byer">
+                @foreach (var (level, label) in Levels)
+                {
+                    var l = level;
+                    <button type="button" class="@Active(CurrentLevel == l)" aria-pressed="@(CurrentLevel == l)" @onclick="() => SetLevel(l)">
+                        @label<small>@((int)l) byer</small>
+                    </button>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_error is not null)
+    {
+        <p class="message bad">Kunne ikke hente data: @_error</p>
+    }
+    else if (!Data.Loaded)
+    {
+        <p class="message info">Henter Danmarkskortet …</p>
+    }
+    else
+    {
+        <main class="board">
+            <section class="mapwrap" aria-label="Kort">
+                <DenmarkMap Shape="Data.Shape"
+                            Towns="MapTowns"
+                            Sights="MapSights"
+                            View="_view"
+                            Detail="Data.DetailFor(_view)"
+                            SelectedTownId="@(_mode == Mode.Explore ? _selectedTown?.Id : null)"
+                            SelectedSightId="@_selectedSight?.Id"
+                            CorrectId="@(_mode == Mode.Quiz && _quiz.Phase == QuizPhase.Answered ? _quiz.Current?.Id : null)"
+                            WrongIds="@(_mode == Mode.Quiz ? _quiz.WrongIds : null)"
+                            ShowLabels="@(_mode == Mode.Explore && _showLabels)"
+                            HideNames="@(_mode == Mode.Quiz)"
+                            OnTownClick="OnTownClicked"
+                            OnSightClick="OnSightClicked" />
+
+                <div class="mapbar">
+                    <div class="segmented small" role="group" aria-label="Zoom">
+                        @foreach (var v in MapView.All)
+                        {
+                            var view = v;
+                            <button type="button" class="@Active(_view == view)" aria-pressed="@(_view == view)" @onclick="() => _view = view">@view.Label</button>
+                        }
+                    </div>
+
+                    @if (_mode == Mode.Explore)
+                    {
+                        <label class="toggle"><input type="checkbox" @bind="_showLabels" /> Vis bynavne</label>
+                        <label class="toggle"><input type="checkbox" @bind="_showSights" /> Vis seværdigheder ⭐</label>
+                    }
+                    else
+                    {
+                        <label class="toggle" title="Quizzen handler kun om seværdigheder (dem i København er ikke med)">
+                            <input type="checkbox" @bind="_showSights" @bind:after="StartQuiz" /> Seværdigheder ⭐
+                        </label>
+                    }
+                </div>
+                @if (Data.DetailFor(_view) is { Credit.Length: > 0 } detail)
+                {
+                    <p class="map-credit"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">@detail.Credit</a></p>
+                }
+            </section>
+
+            <aside class="panel" aria-live="polite">
+                @if (_mode == Mode.Explore)
+                {
+                    @if (_selectedSight is not null)
+                    {
+                        <SightCard Sight="_selectedSight" TownName="@_selectedTown?.Name" OnBack="BackToTown" OnReplay="() => Replay(_selectedSight!.Name)" />
+                    }
+                    else if (_selectedTown is not null)
+                    {
+                        <TownCard Town="_selectedTown" Sights="Data.Sights" OnSightClick="OnSightClicked" OnReplay="() => Replay(_selectedTown!.Name)" />
+                    }
+                    else
+                    {
+                        <div class="card intro">
+                            <h2>Velkommen! 👋</h2>
+                            <p>Tryk på en prik på kortet for at se byens navn, skilt, foto og en kort beskrivelse.</p>
+                            <p>Slå <strong>Vis seværdigheder ⭐</strong> til for at finde Danmarks store attraktioner.</p>
+                            <p>Vil du teste dig selv? Tryk på <strong>🎯 Quiz</strong>.</p>
+                        </div>
+                    }
+                }
+                else
+                {
+                    @QuizPanel
+                }
+            </aside>
+        </main>
+    }
+
+    <footer class="credits">
+        <p class="voice-note">🔊 Stemmen, der læser navnene op, er ikke et menneske – den er computerskabt (syntetisk tale fra Microsoft).</p>
+        <p>Lavet med kærlighed 💛 (c) 2026 Per Hejndorf, Kreaton – @BuildInfo.Display</p>
+    </footer>
+
+    @if (_mode == Mode.Quiz && _quiz.Phase == QuizPhase.Finished && _quiz.Total > 0)
+    {
+        @* Flags and stars fall once when a quiz is finished. *@
+        <div class="rain-layer" aria-hidden="true" @key="_quizRound">
+            @for (var i = 0; i < 24; i++)
+            {
+                if (i % 3 == 0)
+                {
+                    <span class="rain" style="@Rain(i)">⭐</span>
+                }
+                else
+                {
+                    <img class="rain" src="img/dannebrog.gif" alt="" style="@Rain(i)" />
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private RenderFragment QuizPanel => __builder =>
+    {
+        if (_quiz.Phase == QuizPhase.Finished)
+        {
+            <div class="card result">
+                <div class="trophy" aria-hidden="true">🏆</div>
+                <h2>Færdig!</h2>
+                <p class="score">⭐ @_quiz.Score / @_quiz.Total</p>
+                <p class="verdict">@_quiz.Verdict()</p>
+                <button type="button" class="big-btn next-btn" @onclick="StartQuiz">Spil igen ➜</button>
+                <p class="muted">Vælg Let, Mellem eller Svær øverst for at skifte niveau.</p>
+            </div>
+        }
+        else if (_quiz.Phase == QuizPhase.Answered && _quiz.Current is { } answered)
+        {
+            @QuizStats
+            @* The verdict and the way on, together at the top so the next question is one tap away. *@
+            <div class="message answer-bar @(_quiz.LastAnswerCorrect ? "success" : "bad")" @key="_quiz.Index">
+                <span class="answer-text">@_quiz.Feedback</span>
+                <button type="button" class="big-btn next-btn" @onclick="NextQuestion">
+                    @(_quiz.Index + 1 >= _quiz.Total ? "Se resultat ➜" : answered.IsSight ? "Næste seværdighed ➜" : "Næste by ➜")
+                </button>
+            </div>
+            @if (answered.Sight is { } sight)
+            {
+                <SightCard Sight="sight" OnReplay="() => Replay(answered.Name)" />
+            }
+            else
+            {
+                <TownCard Town="answered.Town!" Sights="Data.Sights" OnReplay="() => Replay(answered.Name)" />
+            }
+        }
+        else if (_quiz.Current is { } q)
+        {
+            @QuizStats
+            <div class="card">
+                @if (_quizHard)
+                {
+                    <h2>@(q.IsSight ? "Hvilken seværdighed er det?" : "Hvilken by er det?") 🤔</h2>
+                    <p class="clue">@q.Clue</p>
+                }
+                else
+                {
+                    <h2>Find @(q.IsSight ? "seværdigheden" : "byen") på kortet! 🔎</h2>
+                    @if (q.Town is { } town)
+                    {
+                        <TownSign Name="@town.Name" />
+                    }
+                    else
+                    {
+                        <p class="quiz-sight-name">⭐ @q.Name</p>
+                    }
+                    <div class="replay-row"><button type="button" class="chip replay" title="Computerskabt stemme" @onclick="() => Replay(q.Name)">🔊 Hør igen</button></div>
+                    <p class="desc">@q.Description</p>
+                }
+
+                @if (_quiz.HintShown && q.NearTown is { } near)
+                {
+                    <p class="hint">💡 @q.Kind ligger i <strong>@near.RegionName</strong> – <strong>@near.InArea</strong>.</p>
+                }
+                @if (_quiz.Feedback is not null)
+                {
+                    <p class="message info" @key="_quiz.Attempts">@_quiz.Feedback</p>
+                }
+
+                <div class="row">
+                    @if (!_quiz.HintShown)
+                    {
+                        <button type="button" class="chip" @onclick="_quiz.ShowHint">💡 Vis hint</button>
+                    }
+                    <button type="button" class="chip" @onclick="Skip">Spring over ⏭️</button>
+                </div>
+                <p class="muted">@(q.IsSight ? "Tryk på den rigtige stjerne ⭐ på kortet." : "Tryk på den rigtige prik på kortet.")</p>
+            </div>
+        }
+    };
+
+    private RenderFragment QuizStats => __builder =>
+    {
+        <div class="stats">
+            <span class="stat"><span class="stat-label">@(SightQuiz ? "Nr." : "By")</span><span class="stat-value">@(_quiz.Index + 1)/@_quiz.Total</span></span>
+            <span class="stat"><span class="stat-label">Point</span><span class="stat-value">⭐ @_quiz.Score</span></span>
+            <span class="stat" aria-label="@_quiz.AttemptsLeft forsøg tilbage">
+                <span class="stat-label">Forsøg</span>
+                <span class="stat-value tries">
+                    @for (var i = 0; i < QuizEngine.MaxAttempts; i++)
+                    {
+                        <span class="@(i < _quiz.AttemptsLeft ? "try on" : "try off")">●</span>
+                    }
+                </span>
+            </span>
+        </div>
+    };
+
+    private enum Mode { Explore, Quiz }
+
+    private static readonly (Level, string)[] Levels =
+    [
+        (Level.Easy, "Let"),
+        (Level.Medium, "Mellem"),
+        (Level.Hard, "Svær"),
+    ];
+
+    private readonly QuizEngine _quiz = new();
+    private Mode _mode = Mode.Explore;
+    private Level _exploreLevel = Level.Easy;
+    private Level _quizLevel = Level.Easy;
+    private const int SightQuestions = 10;   // a sight quiz asks 10 of the 41 sights, picked at random each time
+    private bool _quizHard;          // easy (default): the name is shown and said; hard: only a description
+    private MapView _view = MapView.Whole;
+    private Town? _selectedTown;
+    private Sight? _selectedSight;
+    private bool _showLabels;
+    private bool _showSights;
+    private string? _error;
+    private int _quizRound;          // a new key for the rain each time a quiz starts, so it falls again
+
+    private Level CurrentLevel => _mode == Mode.Explore ? _exploreLevel : _quizLevel;
+
+    private IReadOnlyList<Town> VisibleTowns => Data.TownsFor(CurrentLevel);
+
+    /// <summary>Quiz with "Seværdigheder" ticked: only sights (outside København) are asked, no towns.</summary>
+    private bool SightQuiz => _mode == Mode.Quiz && _showSights;
+
+    private IReadOnlyList<Town> MapTowns => SightQuiz ? [] : VisibleTowns;
+
+    /// <summary>Explore: all sights. Sight quiz: only the 10 in this round, so every star on the map is a possible answer.</summary>
+    private IReadOnlyList<Sight>? MapSights =>
+        !_showSights ? null : _mode == Mode.Explore ? Data.Sights : _roundSights;
+    private IReadOnlyList<Sight> _roundSights = [];
+
+    private static string Active(bool on) => on ? "active" : "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await Data.LoadAsync(); }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Sound.LoadAsync();
+        if (!Sound.Enabled) StateHasChanged();
+    }
+
+    private Task ToggleSound() => Sound.SetEnabledAsync(!Sound.Enabled);
+
+    /// <summary>The "Hør igen" button: says the name even when the automatic sound is off.</summary>
+    private Task Replay(string name) => Sound.SayAsync(name, force: true);
+
+    private async Task SetMode(Mode mode)
+    {
+        if (_mode == mode) return;
+        _mode = mode;
+        _selectedTown = null;
+        _selectedSight = null;
+        if (mode == Mode.Quiz) await StartQuiz();
+    }
+
+    private async Task SetQuizHard(bool hard)
+    {
+        if (_quizHard == hard) return;
+        _quizHard = hard;
+        await StartQuiz();
+    }
+
+    private async Task SetLevel(Level level)
+    {
+        if (_mode == Mode.Explore)
+        {
+            _exploreLevel = level;
+            // forget a selection that is no longer on the map
+            if (_selectedTown is not null && !VisibleTowns.Contains(_selectedTown)) { _selectedTown = null; _selectedSight = null; }
+        }
+        else
+        {
+            _quizLevel = level;
+            await StartQuiz();
+        }
+    }
+
+    private async Task StartQuiz()
+    {
+        _quizRound++;
+        if (SightQuiz)
+        {
+            _quiz.Start(Data.QuizSights.Select(s => QuizItem.For(s, Data.TownById(s.NearTownId))), SightQuestions);
+            _roundSights = _quiz.Questions.Select(q => q.Sight!).ToList();
+        }
+        else
+            _quiz.Start(Data.TownsFor(_quizLevel).Select(QuizItem.For));
+        await SayQuestion();
+    }
+
+    private async Task NextQuestion()
+    {
+        _quiz.Next();
+        await SayQuestion();
+    }
+
+    /// <summary>Easy quiz: the name is said as soon as the question is shown.</summary>
+    private Task SayQuestion() =>
+        !_quizHard && _quiz.Phase == QuizPhase.Asking && _quiz.Current is { } q ? Sound.SayAsync(q.Name) : Task.CompletedTask;
+
+    private async Task OnTownClicked(Town town)
+    {
+        if (_mode == Mode.Explore)
+        {
+            var isNew = _selectedTown != town || _selectedSight is not null;
+            _selectedTown = town;
+            _selectedSight = null;
+            if (isNew) await Sound.SayAsync(town.Name);
+        }
+        else
+        {
+            _quiz.Guess(town);
+            await SayAnswer();
+        }
+    }
+
+    private async Task Skip()
+    {
+        _quiz.Skip();
+        await SayAnswer();
+    }
+
+    /// <summary>
+    /// After a guess: a happy chime when it was right. The hard quiz then says the name – only now,
+    /// once the answer is revealed, so it never gives it away.
+    /// </summary>
+    private async Task SayAnswer()
+    {
+        if (_quiz.Phase != QuizPhase.Answered || _quiz.Current is not { } q) return;
+        if (_quiz.LastAnswerCorrect) await Sound.CheerAsync();
+        if (_quizHard) await Sound.SayAsync(q.Name);
+    }
+
+    private async Task OnSightClicked(Sight sight)
+    {
+        if (_mode == Mode.Quiz)
+        {
+            _quiz.Guess(sight);
+            await SayAnswer();
+            return;
+        }
+
+        var isNew = _selectedSight != sight;
+        _selectedSight = sight;
+        _selectedTown = sight.NearTownId is { } id ? Data.Towns.FirstOrDefault(t => t.Id == id) : null;
+        if (isNew) await Sound.SayAsync(sight.Name);
+    }
+
+    private void BackToTown() => _selectedSight = null;
+
+    /// <summary>Spreads the falling flags and stars across the screen with a little variation.</summary>
+    private static string Rain(int i)
+    {
+        var left = i * 37 % 97 + 1;
+        var delay = i * 0.13 % 1.6;
+        var duration = 2.6 + i * 0.29 % 1.4;
+        var size = 1.8 + i * 0.41 % 1.6;
+        return FormattableString.Invariant(
+            $"left:{left}%;width:{size * 1.4:0.##}rem;font-size:{size:0.##}rem;animation-delay:{delay:0.##}s;animation-duration:{duration:0.##}s");
+    }
+}

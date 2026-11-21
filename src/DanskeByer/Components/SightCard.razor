@@ -1,0 +1,23 @@
+<article class="card">
+    <h2 class="sight-title">⭐ @Sight.Name</h2>
+    @if (OnReplay.HasDelegate)
+    {
+        <div class="replay-row"><button type="button" class="chip replay" title="Computerskabt stemme" @onclick="OnReplay">🔊 Hør igen</button></div>
+    }
+    <p class="sight-place">@Sight.Place</p>
+    <WikiPhoto Title="@Sight.Wiki" Alt="@("Foto af " + Sight.Name)" />
+    <p class="desc">@Sight.Description</p>
+    @if (TownName is not null)
+    {
+        <button type="button" class="chip" @onclick="OnBack">⬅️ Tilbage til @TownName</button>
+    }
+</article>
+
+@code {
+    /// <summary>Says the name again; the button is shown when this is set.</summary>
+    [Parameter] public EventCallback OnReplay { get; set; }
+
+    [Parameter, EditorRequired] public Sight Sight { get; set; } = default!;
+    [Parameter] public string? TownName { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+}

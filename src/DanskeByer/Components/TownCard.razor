@@ -1,0 +1,41 @@
+<article class="card">
+    <TownSign Name="@Town.Name" />
+    @if (OnReplay.HasDelegate)
+    {
+        <div class="replay-row"><button type="button" class="chip replay" title="Computerskabt stemme" @onclick="OnReplay">🔊 Hør igen</button></div>
+    }
+    <ul class="facts">
+        <li><span>Indbyggere</span> <strong>@Geo.FormatPopulation(Town.Population)</strong></li>
+        <li><span>Nr.</span> <strong>@Town.Rank største by</strong></li>
+        <li><span>Region</span> <strong>@Town.RegionName</strong></li>
+        <li><span>Landsdel</span> <strong>@Town.Area</strong></li>
+    </ul>
+    <WikiPhoto Title="@Town.Wiki" Fallback="@Town.Name" Alt="@("Foto fra " + Town.Name)" />
+    <p class="desc">@Town.Description</p>
+
+    @if (_sights.Count > 0)
+    {
+        <h3>Seværdigheder ⭐</h3>
+        <ul class="sight-list">
+            @foreach (var s in _sights)
+            {
+                var sight = s;
+                <li><button type="button" class="chip small" @onclick="() => OnSightClick.InvokeAsync(sight)">@sight.Name</button></li>
+            }
+        </ul>
+    }
+</article>
+
+@code {
+    /// <summary>Says the town name again; the button is shown when this is set.</summary>
+    [Parameter] public EventCallback OnReplay { get; set; }
+
+    [Parameter, EditorRequired] public Town Town { get; set; } = default!;
+    [Parameter] public IReadOnlyList<Sight> Sights { get; set; } = [];
+    [Parameter] public EventCallback<Sight> OnSightClick { get; set; }
+
+    private List<Sight> _sights = [];
+
+    protected override void OnParametersSet() =>
+        _sights = Sights.Where(s => s.NearTownId == Town.Id).ToList();
+}

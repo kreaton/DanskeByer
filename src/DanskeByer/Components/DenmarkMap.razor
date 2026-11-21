@@ -1,0 +1,137 @@
+<svg class="map" viewBox="@ViewBox" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Kort over Danmark">
+    @* The coast is drawn in screen pixels (non-scaling stroke); the shadow under the land is kept the same size on screen. *@
+    @if (Detail is not null)
+    {
+        @* OSM coastline: land is on the left of every ring, so islands in the harbour need the nonzero rule. *@
+        <path class="land" d="@Detail.Path" fill-rule="nonzero" style="@LandShadow" />
+    }
+    else
+    {
+        <path class="land" d="@Shape.Path" fill-rule="evenodd" style="@LandShadow" />
+    }
+
+    @foreach (var t in Towns)
+    {
+        var town = t;
+        var cx = F(Shape.X(town.Lon));
+        var cy = F(Shape.Y(town.Lat));
+        <g class="@TownClass(town)" tabindex="0" role="button" aria-label="@TownLabel(town)"
+           @onclick="() => OnTownClick.InvokeAsync(town)"
+           @onclick:stopPropagation="true"
+           @onkeydown="e => OnKey(e, town)">
+            <circle class="hit" cx="@cx" cy="@cy" r="@F(18 / Scale)" />
+            <circle class="dot" cx="@cx" cy="@cy" r="@F(DotRadius(town))" stroke-width="@F(2.5 / Scale)" />
+        </g>
+    }
+
+    @if (Sights is not null)
+    {
+        foreach (var s in Sights)
+        {
+            var sight = s;
+            var sx = F(Shape.X(sight.Lon));
+            var sy = F(Shape.Y(sight.Lat));
+            <g class="@SightClass(sight)" tabindex="0" role="button" aria-label="@(HideNames ? "Seværdighed på kortet" : sight.Name)"
+               transform="translate(@sx @sy) scale(@F(1.2 / Scale))"
+               @onclick="() => OnSightClick.InvokeAsync(sight)"
+               @onclick:stopPropagation="true"
+               @onkeydown="e => OnSightKey(e, sight)">
+                <circle class="hit" r="12" />
+                <path d="M0,-9 L2.7,-3 L9,-2.8 L4,1.5 L5.6,8 L0,4.3 L-5.6,8 L-4,1.5 L-9,-2.8 L-2.7,-3 Z" />
+            </g>
+        }
+    }
+
+    @* Labels last so they are never covered by dots. *@
+    @foreach (var t in Towns)
+    {
+        if (ShowLabels || t.Id == SelectedTownId || t.Id == CorrectId)
+        {
+            @LabelMarkup(t)
+        }
+    }
+</svg>
+
+@code {
+    [Parameter, EditorRequired] public MapShape Shape { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<Town> Towns { get; set; } = [];
+    [Parameter] public IReadOnlyList<Sight>? Sights { get; set; }
+    [Parameter] public MapView View { get; set; } = MapView.Whole;
+    /// <summary>A detailed coastline that covers the view; drawn instead of the country outline.</summary>
+    [Parameter] public MapDetail? Detail { get; set; }
+    [Parameter] public string? SelectedTownId { get; set; }
+    [Parameter] public string? SelectedSightId { get; set; }
+    /// <summary>Quiz: the right answer (town or sight) once it has been revealed (drawn green).</summary>
+    [Parameter] public string? CorrectId { get; set; }
+    [Parameter] public IReadOnlySet<string>? WrongIds { get; set; }
+    [Parameter] public bool ShowLabels { get; set; }
+    /// <summary>Quiz: keep town names out of the accessibility labels so they do not give the answer away.</summary>
+    [Parameter] public bool HideNames { get; set; }
+    [Parameter] public EventCallback<Town> OnTownClick { get; set; }
+    [Parameter] public EventCallback<Sight> OnSightClick { get; set; }
+
+    private double _x0, _y0, _w, _h;
+
+    /// <summary>
+    /// How much the markers shrink in map units for the current view (1 = whole country). On screen they
+    /// grow a little when zoomed in (square root of the zoom), but far in – the København view – they
+    /// grow at most to about double size, so sights a few hundred metres apart stay apart.
+    /// </summary>
+    private double Scale
+    {
+        get
+        {
+            var zoom = Math.Max(1, Shape.Width / _w);
+            return Math.Max(Math.Sqrt(zoom), zoom / 2);
+        }
+    }
+
+    private double Zoom => Math.Max(1, Shape.Width / _w);
+
+    private string LandShadow => $"filter:drop-shadow(0 {F(3 / Zoom)}px 0 rgba(4, 30, 60, 0.5))";
+
+    private string ViewBox => $"{F(_x0)} {F(_y0)} {F(_w)} {F(_h)}";
+
+    protected override void OnParametersSet()
+    {
+        _x0 = Shape.X(View.LonMin);
+        _y0 = Shape.Y(View.LatMax);
+        _w = Shape.X(View.LonMax) - _x0;
+        _h = Shape.Y(View.LatMin) - _y0;
+    }
+
+    private static string F(double d) => d.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    // The smallest towns get smaller dots, so the suburbs around Aarhus and Aalborg do not run together.
+    private double DotRadius(Town t) => (t.Population >= 100_000 ? 12 : t.Population >= 40_000 ? 10.5 : t.Population >= 12_000 ? 9 : 7.5) / Scale;
+
+    private string TownClass(Town t)
+    {
+        var c = "town";
+        if (t.Id == SelectedTownId) c += " selected";
+        if (t.Id == CorrectId) c += " correct";
+        if (WrongIds?.Contains(t.Id) == true) c += " wrong";
+        return c;
+    }
+
+    /// <summary>Razor reserves the &lt;text&gt; tag, so the SVG label is emitted as markup.</summary>
+    private MarkupString LabelMarkup(Town t) => new(
+        $"<text class=\"label\" x=\"{F(Shape.X(t.Lon) + DotRadius(t) + 4 / Scale)}\" y=\"{F(Shape.Y(t.Lat) + 7 / Scale)}\" font-size=\"{F(22 / Scale)}\" stroke-width=\"{F(5 / Scale)}\">{System.Net.WebUtility.HtmlEncode(t.Name)}</text>");
+
+    private string SightClass(Sight s)
+    {
+        var c = "sight";
+        if (s.Id == SelectedSightId) c += " selected";
+        if (s.Id == CorrectId) c += " correct";
+        if (WrongIds?.Contains(s.Id) == true) c += " wrong";
+        return c;
+    }
+
+    private string TownLabel(Town t) => HideNames ? "By på kortet" : t.Name;
+
+    private Task OnKey(KeyboardEventArgs e, Town t) =>
+        e.Key is "Enter" or " " ? OnTownClick.InvokeAsync(t) : Task.CompletedTask;
+
+    private Task OnSightKey(KeyboardEventArgs e, Sight s) =>
+        e.Key is "Enter" or " " ? OnSightClick.InvokeAsync(s) : Task.CompletedTask;
+}

@@ -1,0 +1,17 @@
+@* The Danish town sign (E 55): vector board + building silhouette from wwwroot/img, with the name laid over the empty upper half. *@
+<div class="roadsign" role="img" aria-label="Byskilt: @Name">
+    <img src="img/byzone-skilt.svg" alt="" />
+    <span class="roadsign-name" style="font-size:@FontSize">@Name</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+
+    // container-query width units: text scales with the sign
+    private string FontSize => Name.Length switch
+    {
+        > 14 => "10cqw",
+        > 10 => "13cqw",
+        _ => "17cqw",
+    };
+}
